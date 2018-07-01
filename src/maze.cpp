@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <cstdio>
 #include <ctime>
+#include <iostream>
 #include <optional>
 
 #include "./maze.hpp"
@@ -15,22 +17,39 @@ addPos(Pos p1, Pos p2) -> Pos
 }
 
 static auto
-getMove(const Pos p, const Nodes &visited) -> std::optional<Pos>
+get_moves(const Pos p, size_t max_h, size_t max_l, size_t dist = 2)
+    -> std::vector<Pos>
 {
+	const Pos moves[]{{dist, 0}, {-dist, 0}, {0, dist}, {0, -dist}};
 
-	const Pos moves[]{{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
-
-	auto inBounds = [&](auto y, auto x) -> bool {
-		const auto size{visited.size()};
-		return (y < size) && (x < size);
+	auto inBounds = [&](auto h, auto l) -> bool {
+		return h < max_h && l < max_l;
 	};
 
 	std::vector<Pos> ret;
 	for (auto move : moves) {
-		auto [y, x]{addPos(p, move)};
+		auto [h, l]{addPos(p, move)};
 
-		if (inBounds(y, x) && !visited[y][x])
-			ret.push_back({y, x});
+		if (inBounds(h, l))
+			ret.push_back({h, l});
+	}
+
+	return ret;
+}
+
+static auto
+get_rand_move(const Pos p, const Map &visited) -> std::optional<Pos>
+{
+	std::vector<Pos> ret;
+
+	const size_t max_h{visited.size() - 1};
+	const size_t max_l{visited[0].size() - 1};
+
+	for (auto move : get_moves(p, max_h, max_l)) {
+		auto [h, l]{move};
+
+		if (!visited[h][l])
+			ret.push_back({h, l});
 	}
 
 	auto size{ret.size()};
@@ -41,51 +60,98 @@ getMove(const Pos p, const Nodes &visited) -> std::optional<Pos>
 }
 
 static auto
-connect(Map &m, Pos p1, Pos p2) -> void
+rand_walk(Map &map, Map &visited, Pos p) -> void
 {
-	auto [y1, x1]{p1};
-	auto [y2, x2]{p2};
+	while (auto newPos{get_rand_move(p, visited)}) {
+		auto [h, l]{newPos.value()};
+		auto [h_mid, l_mid]{p};
 
-	auto &node_1{m[y1][x1]};
-	auto &node_2{m[y2][x2]};
+		h_mid = (h_mid + h) / 2;
+		l_mid = (l_mid + l) / 2;
 
-	if (y1 != y2) {
-		if (y1 > y2)
-			node_1[Up] = true;
-		else
-			node_2[Up] = true;
-	} else {
-		if (x1 < x2)
-			node_1[Right] = true;
-		else
-			node_2[Right] = true;
-	}
-}
+		visited[h][l]     = true;
+		map[h][l]         = true;
+		map[h_mid][l_mid] = true;
 
-static auto
-randWalk(Map &m, Nodes &visited, Pos p) -> void
-{
-	while (auto newPos{getMove(p, visited)}) {
-		auto [y, x] = newPos.value();
-
-		visited[y][x] = true;
-		connect(m, p, {y, x});
-		randWalk(m, visited, {y, x});
+		rand_walk(map, visited, {h, l});
 	}
 }
 
 auto
-genMap(size_t x, Pos p) -> Map
+gen_maze(size_t height, size_t length, Pos p) -> Map
 {
-
 	std::srand(std::time(nullptr));
 
-	Map   ret(x, Nodes(x, Node(2, false)));
-	Nodes visited(x, Node(x, false));
+	height = height * 2 + 1;
+	length = length * 2 + 1;
 
-	randWalk(ret, visited, p);
+	Map ret(height, Nodes(length, false));
+	Map visited = ret;
+
+	for (size_t i{1}; i < height; i += 2)
+		for (size_t j{1}; j < length; j += 2)
+			ret[i][j] = true;
+
+	// make entrance/exit
+	ret[0][1]                   = true;
+	ret[height - 1][length - 2] = true;
+
+	rand_walk(ret, visited, p);
 
 	return ret;
 }
 
+static auto
+walk_maze(const Map &       maze,
+          std::vector<Map> &solutions,
+          Map               visited,
+          Pos               current_pos,
+          Pos               end)
+{
+	auto [h, l]{current_pos};
+	const auto max_h{maze.size()};
+	const auto max_l{maze[0].size()};
+
+	visited[h][l] = true;
+
+	if (current_pos == end) {
+		solutions.push_back(visited);
+		return;
+	}
+
+	for (auto move : get_moves(current_pos, max_h, max_l, 1)) {
+		auto [h_new, l_new]{move};
+		if (!visited[h_new][l_new] && maze[h_new][l_new])
+			walk_maze(maze, solutions, visited, move, end);
+	}
+}
+
+auto
+solve_maze(const Map &maze) -> Map
+{
+	std::vector<Map> solutions;
+	auto             m_height{maze.size()};
+	auto             m_length{maze[0].size()};
+
+	Map visited(m_height, Nodes(m_length, false));
+
+	// assumes start and end
+	walk_maze(
+	    maze, solutions, visited, {0, 1}, {m_height - 1, m_length - 2});
+
+	auto sum_step = [](const auto &path) {
+		size_t ret{0};
+
+		for (auto row : path)
+			for (auto c : row)
+				ret += c;
+
+		return ret;
+	};
+
+	return *std::min_element(
+	    std::begin(solutions),
+	    std::end(solutions),
+	    [&](auto a, auto b) -> bool { return sum_step(a) < sum_step(b); });
+}
 } // namespace maze

@@ -8,13 +8,13 @@ namespace maze
 {
 
 using Pos   = std::tuple<size_t, size_t>;
-using Node  = std::vector<bool>;
-using Nodes = std::vector<Node>;
-using Map   = std::vector<std::vector<std::vector<bool>>>;
+using Nodes = std::vector<bool>;
+using Map   = std::vector<Nodes>;
 
 enum Direction { Up, Right };
 
-auto genMap(size_t, Pos = {0, 0}) -> Map;
+auto gen_maze(size_t, size_t, Pos = {1, 1}) -> Map;
+auto solve_maze(const Map &) -> Map;
 
 } // namespace maze
 
